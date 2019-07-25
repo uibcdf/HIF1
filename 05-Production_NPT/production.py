@@ -12,6 +12,7 @@ import simtk.openmm.app as app
 import simtk.unit as unit
 from mdtraj.reporters import HDF5Reporter
 from openmmtools.integrators import LangevinIntegrator
+import pickle
 
 #### SLURM and environment variables
 
@@ -40,7 +41,6 @@ final_pdb_file = os.path.join(tmp_dir, "final_positions.pdb")
 #### Log
 
 log = open(log_file,'w')
-#log = sys.stdout
 
 start_realtime = realtime()
 log.write("\n")
@@ -52,11 +52,11 @@ log.write("\n")
 
 #### Loading PDB
 
-pdb = m3t.convert('system_equilibrated_NPT.pdb', 'openmm.PDBFile')
+model_init = m3t.convert('HIF1_equilibrado_NPT.pdb', 'openmm.Modeller')
 
 #### System
 
-topology = m3t.convert(pdb, 'openmm.Topology')
+topology = model_init.topology
 forcefield = app.ForceField('amber99sbildn.xml','tip3p.xml')
 system = forcefield.createSystem(topology,
                                  nonbondedMethod=app.PME,
@@ -95,18 +95,28 @@ simulation = app.Simulation(topology, system, integrator, platform, properties)
 
 #### Initial Conditions
 
-positions = m3t.get(pdb, coordinates=True)
-simulation.context.setPositions(positions)
-simulation.context.setVelocitiesToTemperature(temperature)
+restart_pkl = open("restart.pkl","rb")
+
+_, init_positions, init_velocities, init_box_vectors = pickle.load(restart_pkl)
+init_positions = init_positions * unit.nanometers
+init_velocities = init_velocities * unit.nanometers*unit.picoseconds
+init_box_vectors = init_box_vectors * unit.nanometers
+
+restart_pkl.close()
+
+simulation.context.setPositions(init_positions)
+simulation.context.setVelocities(init_velocities)
+
+simulation.context.setPeriodicBoxVectors(*init_box_vectors)
 
 #### Iterations Parameters
 
-steps_simulation = 100000000 # 200 ns
-steps_interval_saving = 2500 # 5 ps 
-steps_interval_verbose = 500000 # 1 ns
-steps_interval_checkpoint = 500000 # 1n
+steps_simulation = 5000 # 10 ps
+steps_interval_saving = 1000 # 2 ps 
+steps_interval_verbose = 200 # x ns
+steps_interval_checkpoint = 1000 #2 ps
 
-time_simulation = (steps_simulation*step_size).in_units_of(unit.picoseconds)
+time_simulation = (steps_simulation*step_size).in_units_of(unit.nanoseconds)
 time_saving = (steps_interval_saving*step_size).in_units_of(unit.picoseconds)
 time_verbose = (steps_interval_verbose*step_size).in_units_of(unit.picoseconds)
 time_checkpoint = (steps_interval_checkpoint*step_size).in_units_of(unit.picoseconds)
